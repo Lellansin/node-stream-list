@@ -11,10 +11,8 @@ var ForkStream = module.exports = function ForkStream(options) {
     this._classifier = options.classifier;
   }
 
-  this.a = new stream.Readable(options);
-  this.b = new stream.Readable(options);
-
   var self = this;
+  self.list = [];
 
   var resume = function resume() {
     if (self.resume) {
@@ -24,12 +22,22 @@ var ForkStream = module.exports = function ForkStream(options) {
     }
   };
 
-  this.a._read = resume;
-  this.b._read = resume;
+  var add = function(stream) {
+    var stream = new stream.Readable(options);
+    stream._read = resume;
+    self.list.push(stream);
+  };
+
+  var num = options.num || 2;
+
+  for (var i = 0; i < num; i++) {
+    add(stream);
+  }
 
   this.on("finish", function() {
-    self.a.push(null);
-    self.b.push(null);
+    for (var i = self.list.length - 1; i >= 0; i--) {
+      self.list[i].push(null);
+    };
   });
 };
 ForkStream.prototype = Object.create(stream.Writable.prototype, {constructor: {value: ForkStream}});
@@ -41,12 +49,12 @@ ForkStream.prototype._classifier = function(e, done) {
 ForkStream.prototype._write = function _write(input, encoding, done) {
   var self = this;
 
-  this._classifier.call(null, input, function(err, res) {
+  this._classifier.call(null, input, function(err, num) {
     if (err) {
       return done(err);
     }
 
-    var out = res ? self.a : self.b;
+    var out = self.list[num];
 
     if (out.push(input)) {
       return done();
